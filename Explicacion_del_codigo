@@ -1,0 +1,168 @@
+1. Comentarios de conexión
+//Pin GND-GND, //3.3 V-VCC, //14-SCL, //15-SDA
+Solo son notas de cableado: indican cómo conectar el OLED al ESP32-CAM: GND a GND, VCC a 3.3 V, SCL al pin 14 y SDA al pin 15 del ESP32. No afectan al programa
+2. Inclusión de librerías principales
+#include <jovany123-project-1_inferencing.h>
+Incluye el archivo generado por Edge Impulse con tu modelo (clases, dimensiones de entrada, run_classifier, etc.).
+#include "edge-impulse-sdk/dsp/image/image.hpp"
+Incluye funciones de procesamiento de imagen (recortar, redimensionar, interpolar imágenes RGB).
+#include "esp_camera.h"
+Incluye la librería de ESP32 para configurar la cámara, inicializarla y capturar imágenes.
+
+3. Selección del modelo de cámara y definición de pines
+#define CAMERA_MODEL_AI_THINKER
+Indica que se usa el módulo ESP32-CAM AI Thinker.
+Bloque #if defined(CAMERA_MODEL_AI_THINKER) ... #endif
+Dentro de este bloque se mapean todos los pines físicos del ESP32 a las señales de la cámara:
+– PWDN_GPIO_NUM, RESET_GPIO_NUM, XCLK_GPIO_NUM para encendido, reset y reloj del sensor.
+– SIOD_GPIO_NUM, SIOC_GPIO_NUM para el bus SCCB/I2C de configuración.
+– Y2_GPIO_NUM a Y9_GPIO_NUM para los datos de imagen en paralelo.
+– VSYNC_GPIO_NUM, HREF_GPIO_NUM, PCLK_GPIO_NUM para sincronización vertical, comienzo de línea y reloj de píxel.
+Si no se define un modelo válido, el #error "Camera model not selected" fuerza un error de compilación.
+
+4. Parámetros del búfer de imagen cruda
+EI_CAMERA_RAW_FRAME_BUFFER_COLS 320, EI_CAMERA_RAW_FRAME_BUFFER_ROWS 240, EI_CAMERA_FRAME_BYTE_SIZE 3
+Definen el tamaño crudo de la imagen de la cámara: 320 x 240 píxeles, con 3 bytes por píxel (RGB).
+
+5. Librerías y configuración de I2C + OLED
+#include <Wire.h>, #include <Adafruit_GFX.h>, #include <Adafruit_SSD1306.h>
+Librerías para manejar I2C y el display OLED SSD1306, con funciones gráficas (texto, figuras, etc.).
+#define I2C_SDA 15, #define I2C_SCL 14, TwoWire I2Cbus = TwoWire(0);
+Configuran los pines 15 y 14 como SDA y SCL de I2C, y crean el objeto I2Cbus para manejar ese bus.
+SCREEN_WIDTH 128, SCREEN_HEIGHT 64, OLED_RESET -1, SCREEN_ADDRESS 0x3C y Adafruit_SSD1306 display(...)
+Definen tamaño, reset y dirección I2C del OLED, y crean el objeto display que se usará para escribir texto en la pantalla.
+
+6. Pines de LEDs y variables globales
+LED_AZUL 12, LED_VERDE 13, LED_ROJO 2
+Definen los pines donde se conectan los LEDs de estado (azul, verde y rojo).
+static bool debug_nn = false;
+Bandera para activar o no mensajes de depuración de la red neuronal (no la usas mucho aquí, pero se pasa a run_classifier).
+static bool is_initialised = false;
+Indica si la cámara ya fue inicializada para no hacerlo dos veces.
+uint8_t *snapshot_buf;
+Puntero a un búfer donde se almacenará la imagen cruda capturada de la cámara.
+
+7. Estructura de configuración de la cámara
+static camera_config_t camera_config = { ... };
+Estructura que agrupa toda la configuración de la cámara:
+– Asocia cada pin físico (PWDN_GPIO_NUM, Y2_GPIO_NUM, VSYNC_GPIO_NUM, etc.) con su función en el módulo de cámara.
+– Configura parámetros de funcionamiento: reloj XCLK a 20 MHz (xclk_freq_hz), formato de salida JPEG (pixel_format), resolución QVGA (320 x 240, frame_size), calidad JPEG (jpeg_quality = 12), un solo buffer (fb_count = 1), ubicación del buffer en PSRAM (fb_location), y modo de captura (grab_mode = CAMERA_GRAB_WHEN_EMPTY).
+
+8. Prototipos de funciones
+ei_camera_init, ei_camera_deinit, ei_camera_capture
+Solo anuncian las funciones que luego se implementan para inicializar la cámara, desinicializarla y capturar imágenes.
+
+9. Función setup
+void setup()
+Esta función se ejecuta una sola vez al encender:
+•	Serial.begin(115200);
+Inicializa el puerto serie a 115200 baudios para poder ver mensajes en el monitor.
+•	I2Cbus.begin(I2C_SDA, I2C_SCL, 100000);
+Inicia el bus I2C con los pines 15 (SDA) y 14 (SCL) a 100 kHz.
+•	if (!display.begin(...)) { ... }
+Intenta inicializar el OLED. Si falla, imprime un error por serie y se queda en un bucle infinito, porque sin display el resto de la interfaz no tendría sentido.
+•	pinMode(LED_AZUL/VERDE/ROJO, OUTPUT) y digitalWrite iniciales
+Configuran los tres LEDs como salidas y encienden el azul (sistema listo) mientras los otros dos se mantienen apagados.
+•	while (!Serial); y Serial.println("Edge Impulse Inferencing Demo");
+Espera a que el puerto serie esté listo y escribe un mensaje identificando el programa.
+•	if (ei_camera_init() == false) { ... } else { ... }
+Llama a la función que inicializa la cámara, avisando por serie si falló o si se inició correctamente.
+•	ei_printf("\nStarting continious inference in 2 seconds...\n");
+Anuncia por consola que la inferencia comenzará en 2 segundos.
+•	Bloque del display: display.clearDisplay();, setCursor, setTextSize, setTextColor, display.print(...), display.display();, ei_sleep(2000);, display.clearDisplay();
+Muestra en el OLED el mensaje de “Starting continuous inference in 2 seconds...”, espera 2 segundos y luego borra la pantalla para dejarla lista para el bucle principal.
+
+10. Función loop (flujo general)
+void loop()
+Se repite continuamente:
+•	display.clearDisplay();
+Limpia la pantalla al inicio de cada iteración.
+•	if (ei_sleep(5) != EI_IMPULSE_OK) return;
+Espera 5 ms de forma compatible con Edge Impulse; si algo va mal, sale de la iteración.
+•	Reservar memoria:
+snapshot_buf = (uint8_t *)malloc(...); + if (snapshot_buf == nullptr) { ... }
+Reserva memoria para la imagen cruda (320 x 240 x 3); si no hay memoria, imprime error y sale del loop.
+•	Preparar el signal de entrada:
+ei::signal_t signal;
+Se establece su longitud (total_length = ancho * alto del modelo) y la función que proporcionará los datos (signal.get_data = &ei_camera_get_data).
+•	Capturar imagen:
+if (ei_camera_capture(...) == false) { ... }
+Toma una foto, la convierte a RGB y, si falla, imprime error, libera snapshot_buf y termina la iteración.
+•	Ejecutar el modelo:
+ei_impulse_result_t result = {0};
+EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
+Ejecuta la red neuronal sobre la imagen capturada. Si err indica fallo, se imprime el error y se termina la iteración.
+•	Imprimir tiempos de inferencia:
+ei_printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): ...")
+Muestra cuánto tardó el procesamiento de señal, la clasificación y el módulo de anomalías.
+
+11. Bloque de detección de objetos y manejo de LEDs/OLED
+#if EI_CLASSIFIER_OBJECT_DETECTION == 1
+El código siguiente solo se usa si el modelo es de detección de objetos.
+•	Variables de estado:
+bool bb_found = result.bounding_boxes[0].value > 0;
+Indica si existe al menos una bounding box válida.
+bool detecto_Llaves_casa = false; y bool detecto_llves_moto = false;
+Señalan si se detectaron específicamente las clases “Llaves_casa” o “llves_moto”.
+•	Recorrido de detecciones:
+for (size_t ix = 0; ix < result.bounding_boxes_count; ix++) { ... }
+Recorre todas las bounding boxes de result y, para cada una con valor distinto de cero:
+– Imprime por serie la etiqueta, la probabilidad y las coordenadas de la caja.
+– Muestra en el OLED la etiqueta y la confianza en porcentaje, en una fila distinta (setCursor(0, 20 * ix), tamaño de texto 2).
+– Compara bb.label con "Llaves_casa" y "llves_moto" para activar las banderas detecto_Llaves_casa y detecto_llves_moto cuando se detectan esas clases.
+•	Decisión de LEDs cuando sí hay detecciones (if (bb_found) { ... }):
+– Si detecto_Llaves_casa es verdadero:
+digitalWrite(LED_AZUL, LOW); digitalWrite(LED_VERDE, HIGH); digitalWrite(LED_ROJO, LOW);
+Se enciende el LED verde y se apagan azul y rojo para indicar detección de llaves de casa.
+– En caso contrario, si detecto_llves_moto es verdadero:
+Se enciende solo el LED rojo (azul y verde apagados) para indicar detección de llaves de moto.
+– Si hay detecciones pero ninguna de esas dos clases:
+Se enciende solo el LED azul para indicar que se detectó algún objeto, pero no las clases de interés.
+•	Caso sin detecciones (else de if (bb_found)):
+– Se imprime “Nada detectado” por consola.
+– En el OLED se escribe “No detecto” con tamaño de texto 2.
+– Se enciende el LED azul y se apagan verde y rojo, indicando que no se detectó ningún objeto.
+#endif
+Fin del bloque de detección de objetos.
+•	free(snapshot_buf);
+Libera la memoria de la imagen al final de la iteración del loop para evitar fugas.
+
+12. Función ei_camera_init
+bool ei_camera_init(void)
+Inicializa la cámara:
+•	Si is_initialised ya es verdadero, solo devuelve true (ya estaba lista).
+•	Llama a esp_camera_init(&camera_config) con la estructura de configuración. Si falla, se imprime el código de error y se devuelve false.
+•	Obtiene el objeto sensor_t *s = esp_camera_sensor_get();. Si el sensor es del tipo OV3660, ajusta orientación (set_vflip), brillo (set_brightness) y saturación (set_saturation).
+•	Marca is_initialised = true; y devuelve true.
+
+13. Función ei_camera_deinit
+void ei_camera_deinit(void)
+Apaga / desinicializa la cámara:
+•	Llama a esp_camera_deinit(). Si falla, imprime un mensaje de error y regresa.
+•	Si todo va bien, pone is_initialised = false; para indicar que la cámara ya no está disponible.
+
+14. Función ei_camera_capture
+bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf)
+Captura y prepara una imagen para el modelo:
+•	Verifica que la cámara esté inicializada; si no, imprime error y devuelve false.
+•	Llama a esp_camera_fb_get() para obtener un frame buffer fb con una imagen JPEG. Si fb es nulo, indica error y devuelve false.
+•	Convierte el JPEG a formato RGB888 dentro de snapshot_buf usando fmt2rgb888(...). Después devuelve el buffer a la cámara con esp_camera_fb_return(fb). Si la conversión falla, imprime error y devuelve false.
+•	Comprueba si el tamaño deseado (img_width, img_height) coincide con 320 x 240. Si no coinciden, marca que hay que redimensionar.
+•	Si es necesario redimensionar, usa ei::image::processing::crop_and_interpolate_rgb888(...) para recortar y escalar la imagen al tamaño que el modelo necesita, guardando el resultado en out_buf.
+•	Si todo fue bien, devuelve true.
+
+15. Función ei_camera_get_data
+static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr)
+Función de callback que Edge Impulse usa para leer partes de la imagen:
+•	Calcula el índice de byte en snapshot_buf correspondiente al píxel offset (pixel_ix = offset * 3).
+•	Recorre length píxeles y, para cada uno, toma 3 bytes consecutivos (RGB) desde snapshot_buf, los combina en un entero de 24 bits y lo guarda como float en out_ptr.
+•	Avanza índices (out_ptr_ix, pixel_ix) y decrementa pixels_left hasta terminar.
+•	Devuelve 0 para indicar que la lectura se hizo correctamente.
+
+16. Verificación del tipo de sensor del modelo
+#if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_CAMERA
+Comprueba en tiempo de compilación que el modelo de Edge Impulse está configurado para sensor de tipo cámara.
+#error "Invalid model for current sensor"
+Si no es así, produce un error de compilación para evitar usar un modelo incompatible.
+#endif
+Fin de la verificación.

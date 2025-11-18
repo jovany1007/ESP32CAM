@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"> <!-- utf -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- responsive -->
+  <title>Jovany Pérez</title>
+
+  <style>
+    /* fondo */
+    body {
+      background: radial-gradient(circle at center, #1a0000 0%, #000 100%);
+      color: #fff;
+      font-family: "Poppins", sans-serif;
+
+      display: flex; /* centro */
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    /* tarjeta */
+    .card {
+      display: flex; /* foto + texto */
+      align-items: center;
+      gap: 2rem;
+
+      background: rgba(255, 0, 0, 0.08);
+      border: 1px solid rgba(255, 0, 0, 0.2);
+      padding: 2rem 3rem;
+      border-radius: 20px;
+      box-shadow: 0 0 30px rgba(255, 0, 0, 0.2);
+    }
+
+    /* foto circular */
+    .foto {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 3px solid #ff0000;
+      box-shadow: 0 0 25px rgba(255, 0, 0, 0.4);
+      flex-shrink: 0;
+    }
+
+    .foto img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* texto */
+    .info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .info h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+
+    .info p {
+      color: #ccc;
+      margin: 8px 0 20px 0;
+    }
+
+    /* botones */
+    .links {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .links a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      font-weight: bold;
+      border-radius: 10px;
+      padding: 10px 20px;
+      transition: 0.2s;
+      color: #fff;
+    }
+
+    /* boton rojo */
+    .links a.codigo {
+      background-color: #ff0000;
+    }
+    .links a.codigo:hover {
+      background-color: #cc0000;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.7);
+    }
+
+    /* boton negro */
+    .links a.explicacion {
+      background-color: #222;
+      border: 1px solid #ff0000;
+    }
+    .links a.explicacion:hover {
+      background-color: #000;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.7);
+    }
+
+    /* reporte */
+    .reporte-contenedor {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .reporte-texto {
+      font-size: 0.95rem;
+      color: #f2f2f2;
+    }
+
+    /* boton pdf */
+    .reporte-boton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      font-weight: bold;
+      border-radius: 10px;
+      padding: 10px 20px;
+      border: 1px solid #ff0000;
+      background-color: #111;
+      color: #fff;
+      transition: 0.2s;
+    }
+
+    .reporte-boton:hover {
+      background-color: #000;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.7);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- foto -->
+    <div class="foto">
+      <img src="logo.png" alt="logo">
+    </div>
+
+    <div class="info">
+
+      <!-- nombre -->
+      <h1>Jovany Pérez</h1>
+
+      <!-- texto repo -->
+      <p>
+        En este repositorio veremos un sistema de visión con ESP32-CAM y Edge Impulse
+        que detecta llaves de casa/moto, muestra resultados en pantalla OLED y enciende
+        LEDs según el objeto detectado.
+      </p>
+
+      <!-- botones repo -->
+      <div class="links">
+        <a href="https://github.com/jovany1007/ESP32CAM/blob/main/codigoESP32CAM" target="_blank" class="codigo">Código</a>
+        <a href="https://github.com/jovany1007/ESP32CAM/blob/main/Explicacion_del_codigo" target="_blank" class="explicacion">Explicación del código</a>
+      </div>
+
+      <!-- pdf -->
+      <div class="reporte-contenedor">
+        <span class="reporte-texto">Reporte general de cómo usar la ESP32-CAM.</span>
+        <a href="Reporte ESPCAM_final.pdf" class="reporte-boton" download>Descargar PDF</a>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
